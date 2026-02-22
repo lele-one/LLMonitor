@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Hard-fused Bolt (Original path scaled 90% at pivot 12,12) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M7.5,3 L7.5,12.9 L10.2,12.9 L10.2,21 L16.5,10.2 L12.9,10.2 L16.5,3 Z"/>
+</vector>

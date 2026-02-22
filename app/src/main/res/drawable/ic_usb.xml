@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Hard-fused Computer (Original path scaled 80% at pivot 12,12) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M18.4,16.8 c0.88,0 1.6,-0.72 1.6,-1.6 V7.2 c0,-0.88 -0.72,-1.6 -1.6,-1.6 H5.6 c-0.88,0 -1.6,0.72 -1.6,1.6 V15.2 c0,0.88 0.72,1.6 1.6,1.6 H2.4 v1.6 h19.2 v-1.6 H18.4 z M5.6,7.2 H18.4 V15.2 H5.6 V7.2 z"/>
+</vector>
