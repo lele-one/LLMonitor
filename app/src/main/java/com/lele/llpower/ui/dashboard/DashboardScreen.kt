@@ -12,6 +12,8 @@ import androidx.compose.animation.core.*
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,6 +27,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.SystemClock
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,17 +35,45 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 @Composable
-fun StaggeredEntry(index: Int, content: @Composable () -> Unit) {
-    val visible = rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(index * 30L) // Subtle staggered delay
-        visible.value = true
+fun StaggeredEntry(
+    index: Int,
+    alreadyAnimated: Boolean,
+    onAnimationCompleted: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    if (alreadyAnimated) {
+        content()
+        return
     }
-    AnimatedVisibility(
-        visible = visible.value,
-        enter = fadeIn(animationSpec = tween(durationMillis = 220))
+
+    var started by remember { mutableStateOf(false) }
+    val progress by animateFloatAsState(
+        targetValue = if (started) 1f else 0f,
+        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        label = "CardEntryProgress_$index"
+    )
+
+    LaunchedEffect(Unit) {
+        delay(index * 70L)
+        started = true
+        // 等入场动画基本完成后再标记，避免中途重组造成“未播放完就跳过”
+        delay(420L)
+        onAnimationCompleted()
+    }
+
+    Box(
+        modifier = Modifier.graphicsLayer {
+            // 在原始布局尺寸内做轻微放大恢复 + 渐显，避免任何越界裁切
+            val minScale = 0.94f
+            val scale = minScale + (1f - minScale) * progress
+            scaleX = scale
+            scaleY = scale
+            alpha = progress
+            transformOrigin = TransformOrigin(0.5f, 0f)
+        }
     ) {
         content()
     }
@@ -67,6 +98,7 @@ fun DashboardScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var isIgnoringBatteryOptimizations by remember { mutableStateOf(true) }
+    var resumedAtElapsedRealtime by remember { mutableStateOf(0L) }
     
     // Android 13+ 通知权限状态
     var hasNotificationPermission by remember {
@@ -82,6 +114,7 @@ fun DashboardScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                resumedAtElapsedRealtime = SystemClock.elapsedRealtime()
                 isIgnoringBatteryOptimizations = SettingsManager.isIgnoringBatteryOptimizations(context)
                 
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -99,6 +132,14 @@ fun DashboardScreen(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { isGranted -> hasNotificationPermission = isGranted }
     )
+    var animatedCardIndices by rememberSaveable { mutableStateOf(setOf<Int>()) }
+
+    fun hasAnimated(index: Int): Boolean = animatedCardIndices.contains(index)
+    fun markAnimated(index: Int) {
+        if (!animatedCardIndices.contains(index)) {
+            animatedCardIndices = animatedCardIndices + index
+        }
+    }
 
     // 离开 Dashboard 时兜底关闭 HDR，避免切页时窗口色域状态残留导致全屏亮闪
     DisposableEffect(Unit) {
@@ -134,15 +175,19 @@ fun DashboardScreen(
         onSetHdrMode(showHdrGlow)
     }
 
-    LaunchedEffect(viewModel.chargingStartedEvent) {
-        viewModel.chargingStartedEvent.collect {
-            // 使用系统电池状态做实时判定，避免 UI 状态与事件的时序竞态导致误拦截
-            val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-            val isChargingNow = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                status == BatteryManager.BATTERY_STATUS_FULL
-            if (isChargingNow) {
-                showHdrGlow = true
+    LaunchedEffect(lifecycleOwner, viewModel.chargingStartedEvent) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.chargingStartedEvent.collect { eventElapsedRealtime ->
+                // 过滤后台积压事件：仅响应恢复到前台后新产生的充电开始事件
+                if (eventElapsedRealtime < resumedAtElapsedRealtime - 1000L) return@collect
+                // 使用系统电池状态做实时判定，避免 UI 状态与事件的时序竞态导致误拦截
+                val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val isChargingNow = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
+                if (isChargingNow) {
+                    showHdrGlow = true
+                }
             }
         }
     }
@@ -187,7 +232,11 @@ fun DashboardScreen(
             val isNotificationDismissed by SettingsManager.isNotificationPermissionDismissed
             if (!hasNotificationPermission && !isNotificationDismissed && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 item(key = "permission_notification") {
-                    StaggeredEntry(index = 0) {
+                    StaggeredEntry(
+                        index = 0,
+                        alreadyAnimated = hasAnimated(0),
+                        onAnimationCompleted = { markAnimated(0) }
+                    ) {
                         ElevatedCard(
                             colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
                             modifier = Modifier.fillMaxWidth()
@@ -234,7 +283,11 @@ fun DashboardScreen(
             val isBatteryOptDismissed by SettingsManager.isBatteryOptimizationDismissed
             if (!isIgnoringBatteryOptimizations && !isBatteryOptDismissed) {
                 item(key = "permission_battery_opt") {
-                    StaggeredEntry(index = 1) {
+                    StaggeredEntry(
+                        index = 1,
+                        alreadyAnimated = hasAnimated(1),
+                        onAnimationCompleted = { markAnimated(1) }
+                    ) {
                         ElevatedCard(
                             colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                             modifier = Modifier.fillMaxWidth()
@@ -280,7 +333,11 @@ fun DashboardScreen(
             // 0.3 建议卡片：虚拟电压
             if (showVirtualVoltageSuggestion) {
                 item(key = "suggestion_virtual_voltage") {
-                    StaggeredEntry(index = 2) {
+                    StaggeredEntry(
+                        index = 2,
+                        alreadyAnimated = hasAnimated(2),
+                        onAnimationCompleted = { markAnimated(2) }
+                    ) {
                         ElevatedCard(
                             colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                             modifier = Modifier.fillMaxWidth()
@@ -332,7 +389,11 @@ fun DashboardScreen(
 
             // 1. 功率与电流
             item(key = "card_power_current") {
-                StaggeredEntry(index = 3) {
+                StaggeredEntry(
+                    index = 3,
+                    alreadyAnimated = hasAnimated(3),
+                    onAnimationCompleted = { markAnimated(3) }
+                ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         InfoCard("瞬时功率", "${String.format("%.2f", instant.power)} W", Modifier.weight(1f).squishyClickable { /* Optional tap logic */ })
                         InfoCard("电池电流", "${instant.current.toInt()} mA", Modifier.weight(1f).squishyClickable { /* Optional tap logic */ })
@@ -342,7 +403,11 @@ fun DashboardScreen(
 
             // 2. 电压与温度
             item(key = "card_voltage_temp") {
-                StaggeredEntry(index = 4) {
+                StaggeredEntry(
+                    index = 4,
+                    alreadyAnimated = hasAnimated(4),
+                    onAnimationCompleted = { markAnimated(4) }
+                ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         val isVirtualVoltage by SettingsManager.isVirtualVoltageEnabled
                         val voltageTitle = if (isVirtualVoltage) "虚拟电压" else "电池电压"
@@ -354,7 +419,11 @@ fun DashboardScreen(
 
             // 3. 供电状态与健康
             item(key = "card_supply_health") {
-                StaggeredEntry(index = 5) {
+                StaggeredEntry(
+                    index = 5,
+                    alreadyAnimated = hasAnimated(5),
+                    onAnimationCompleted = { markAnimated(5) }
+                ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         HdrGlowWrapper(
                             visible = showHdrGlow,
@@ -380,7 +449,11 @@ fun DashboardScreen(
 
             // 4. 电量百分比
             item(key = "card_capacity") {
-                StaggeredEntry(index = 6) {
+                StaggeredEntry(
+                    index = 6,
+                    alreadyAnimated = hasAnimated(6),
+                    onAnimationCompleted = { markAnimated(6) }
+                ) {
                     ElevatedCard(
                         modifier = Modifier.fillMaxWidth().squishyClickable { /* Optional: show details */ },
                         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -425,7 +498,11 @@ fun DashboardScreen(
             }
 
             item(key = "card_power_curve") {
-                StaggeredEntry(index = 7) {
+                StaggeredEntry(
+                    index = 7,
+                    alreadyAnimated = hasAnimated(7),
+                    onAnimationCompleted = { markAnimated(7) }
+                ) {
                     PowerCurveCard(
                         history = history,
                         recordIntervalMs = viewModel.recordIntervalMs,
@@ -438,7 +515,11 @@ fun DashboardScreen(
 
             // 6. 温度曲线
             item(key = "card_temperature_curve") {
-                StaggeredEntry(index = 8) {
+                StaggeredEntry(
+                    index = 8,
+                    alreadyAnimated = hasAnimated(8),
+                    onAnimationCompleted = { markAnimated(8) }
+                ) {
                     TemperatureCurveCard(
                         history = history,
                         modifier = Modifier.squishyClickable { /* Zoom or details */ }

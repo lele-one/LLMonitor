@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -45,7 +46,8 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
     var instantStatus by mutableStateOf(InstantBatteryState())
         private set
 
-    private val _chargingStartedEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    // 携带单调时钟时间戳：前台可稳定触发，UI 侧可过滤后台积压事件
+    private val _chargingStartedEvent = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
     val chargingStartedEvent = _chargingStartedEvent.asSharedFlow()
 
     val recordIntervalMs = 60000L  // 每分钟记录一次
@@ -90,7 +92,7 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
                 if (stateChanged || intervalPassed) {
                     // Detect if charging just started
                     if (lastIsCharging == false && isCharging) {
-                        _chargingStartedEvent.tryEmit(Unit)
+                        _chargingStartedEvent.tryEmit(SystemClock.elapsedRealtime())
                     }
                     
                     // 状态变化 或 达到刷新间隔：执行完整数据更新

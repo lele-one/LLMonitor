@@ -376,34 +376,55 @@ fun drawSegment(
         ys[i] = graphHeight * (1 - (p.power - yMin) / validRange)
     }
 
-    // 1. 计算割线斜率
-    val ms = FloatArray(size - 1)
+    // 1. 计算区间宽度与割线斜率
+    val hs = FloatArray(size - 1)
+    val ds = FloatArray(size - 1)
     for (i in 0 until size - 1) {
         val dx = xs[i + 1] - xs[i]
-        ms[i] = if (dx <= 0.001f) 0f else (ys[i + 1] - ys[i]) / dx
+        hs[i] = dx.coerceAtLeast(0.001f)
+        ds[i] = (ys[i + 1] - ys[i]) / hs[i]
     }
 
-    // 2. 计算点切线 (使用 Monotone Cubic Spline 算法)
+    // 2. 计算点切线 (Fritsch-Carlson 单调三次插值，抑制尖峰过冲)
     val tangents = FloatArray(size)
-    // 边界点使用简单斜率
-    tangents[0] = ms[0]
-    tangents[size - 1] = ms[size - 2]
-    
+    tangents[0] = ds[0]
+    tangents[size - 1] = ds[size - 2]
+
     for (i in 1 until size - 1) {
-        val mLabel = ms[i - 1]
-        val mNext = ms[i]
-        if (mLabel * mNext <= 0f) {
+        val dPrev = ds[i - 1]
+        val dNext = ds[i]
+        if (dPrev * dNext <= 0f) {
             tangents[i] = 0f
         } else {
-            // Fritsch-Butland 平均值，增加对极小值的保护
-            tangents[i] = (mLabel + mNext) / 2f
+            // 加权谐均值，较大斜率差时更稳定
+            val w1 = 2f * hs[i] + hs[i - 1]
+            val w2 = hs[i] + 2f * hs[i - 1]
+            tangents[i] = (w1 + w2) / (w1 / dPrev + w2 / dNext)
         }
     }
 
-    // 3. 绘制三阶贝塞尔段
+    // 3. 斜率限制器：确保每段单调，避免峰值“忽长忽短”的过冲
+    for (i in 0 until size - 1) {
+        val d = ds[i]
+        if (kotlin.math.abs(d) < 1e-6f) {
+            tangents[i] = 0f
+            tangents[i + 1] = 0f
+        } else {
+            val a = tangents[i] / d
+            val b = tangents[i + 1] / d
+            val norm = kotlin.math.sqrt(a * a + b * b)
+            if (norm > 3f) {
+                val scale = 3f / norm
+                tangents[i] = scale * a * d
+                tangents[i + 1] = scale * b * d
+            }
+        }
+    }
+
+    // 4. 绘制三阶贝塞尔段
     path.moveTo(xs[0], ys[0])
     for (i in 0 until size - 1) {
-        val dx = xs[i + 1] - xs[i]
+        val dx = hs[i]
         val cx1 = xs[i] + dx / 3f
         val cy1 = ys[i] + tangents[i] * dx / 3f
         val cx2 = xs[i + 1] - dx / 3f
