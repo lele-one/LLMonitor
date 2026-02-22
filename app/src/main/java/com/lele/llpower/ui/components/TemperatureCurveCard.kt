@@ -4,7 +4,6 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
@@ -20,10 +19,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lele.llpower.data.local.BatteryEntity
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.roundToInt
 
 data class TempPointData(val timestamp: Long, val temperature: Float)
 
@@ -77,7 +78,7 @@ fun TemperatureCurveCard(
     val canvasWidth = chartAreaWidth * totalWidthRatio
 
     val scrollState = rememberScrollState()
-    val isDragged by scrollState.interactionSource.collectIsDraggedAsState()
+    var hasInitialAligned by remember { mutableStateOf(false) }
     
     val isAtBottom by remember { 
         derivedStateOf { 
@@ -85,17 +86,29 @@ fun TemperatureCurveCard(
         } 
     }
 
-    LaunchedEffect(points.size, now) {
-        if (!isDragged && (isAtBottom || points.isEmpty())) {
+    LaunchedEffect(scrollState.maxValue) {
+        if (!hasInitialAligned && scrollState.maxValue > 0) {
+            scrollState.scrollTo(scrollState.maxValue)
+            hasInitialAligned = true
+        }
+    }
+
+    LaunchedEffect(points.size, scrollState.maxValue) {
+        if (hasInitialAligned && !scrollState.isScrollInProgress && (isAtBottom || points.isEmpty())) {
             scrollState.scrollTo(scrollState.maxValue)
         }
     }
 
-    LaunchedEffect(isDragged) {
-        if (!isDragged) {
-            delay(5000L)
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
+    @OptIn(FlowPreview::class)
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.value to scrollState.maxValue }
+            .distinctUntilChanged()
+            .debounce(3000L)
+            .collect { (value, max) ->
+                if (max > 0 && value < max - 2) {
+                    scrollState.animateScrollTo(max)
+                }
+            }
     }
 
     ElevatedCard(

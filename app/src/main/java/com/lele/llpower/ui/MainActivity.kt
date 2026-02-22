@@ -7,6 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge // 1. 导入此包
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -19,6 +22,8 @@ import com.lele.llpower.ui.settings.SettingsScreen
 import com.lele.llpower.ui.theme.LLPowerTheme
 
 class MainActivity : ComponentActivity() {
+    private var isHdrModeEnabled: Boolean = false
+
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         // 2. 开启沉浸式边缘到边缘设计
@@ -35,29 +40,34 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val viewModel: BatteryViewModel = viewModel()
 
-                NavHost(
-                    navController = navController,
-                    startDestination = "dashboard"
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background
                 ) {
-                    composable("dashboard") {
-                        DashboardScreen(
-                            viewModel = viewModel,
-                            onNavigateToSettings = {
-                                navController.navigate("settings")
-                            },
-                            onSetHdrMode = { enabled ->
-                                setHdrMode(enabled)
-                            }
-                        )
-                    }
+                    NavHost(
+                        navController = navController,
+                        startDestination = "dashboard"
+                    ) {
+                        composable("dashboard") {
+                            DashboardScreen(
+                                viewModel = viewModel,
+                                onNavigateToSettings = {
+                                    navController.navigate("settings")
+                                },
+                                onSetHdrMode = { enabled ->
+                                    setHdrMode(enabled)
+                                }
+                            )
+                        }
 
-                    composable("settings") {
-                        SettingsScreen(
-                            viewModel = viewModel, // 【新增】传入 ViewModel 实例
-                            onBack = {
-                                navController.popBackStack()
-                            }
-                        )
+                        composable("settings") {
+                            SettingsScreen(
+                                viewModel = viewModel, // 【新增】传入 ViewModel 实例
+                                onBack = {
+                                    navController.popBackStack()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -66,6 +76,10 @@ class MainActivity : ComponentActivity() {
 
     private fun setHdrMode(enabled: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // 避免重复设置同一色域模式，部分机型会因此出现整屏亮闪
+            if (enabled == isHdrModeEnabled) return
+            isHdrModeEnabled = enabled
+
             val colorMode = if (enabled) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     android.content.pm.ActivityInfo.COLOR_MODE_HDR

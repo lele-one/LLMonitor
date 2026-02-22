@@ -22,6 +22,9 @@ import com.lele.llpower.ui.components.TemperatureCurveCard
 import com.lele.llpower.ui.components.HdrGlowWrapper
 import com.lele.llpower.ui.components.squishyClickable
 import android.Manifest
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,14 +42,7 @@ fun StaggeredEntry(index: Int, content: @Composable () -> Unit) {
     }
     AnimatedVisibility(
         visible = visible.value,
-        enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
-                slideInVertically(
-                    initialOffsetY = { 20 },
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioLowBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
-                )
+        enter = fadeIn(animationSpec = tween(durationMillis = 220))
     ) {
         content()
     }
@@ -104,6 +100,13 @@ fun DashboardScreen(
         onResult = { isGranted -> hasNotificationPermission = isGranted }
     )
 
+    // 离开 Dashboard 时兜底关闭 HDR，避免切页时窗口色域状态残留导致全屏亮闪
+    DisposableEffect(Unit) {
+        onDispose {
+            onSetHdrMode(false)
+        }
+    }
+
     // 0.3 虚拟电压建议逻辑
     var showVirtualVoltageSuggestion by remember { mutableStateOf(false) }
     val isVirtualVoltageEnabled by SettingsManager.isVirtualVoltageEnabled
@@ -125,12 +128,20 @@ fun DashboardScreen(
 
     // HDR Glow logic
     var showHdrGlow by remember { mutableStateOf(false) }
+
+    // 仅在呼吸灯播放期间启用 HDR；播放结束立即回到默认色域
+    LaunchedEffect(showHdrGlow) {
+        onSetHdrMode(showHdrGlow)
+    }
+
     LaunchedEffect(viewModel.chargingStartedEvent) {
         viewModel.chargingStartedEvent.collect {
-            // 双重保险：只有当当前确实处于充电或充满状态时，才触发呼吸灯特效
-            // 这可以过滤掉在后台插拔电源时留在缓冲区的过期事件
-            if (instant.statusText == "充电中" || instant.statusText == "已充满") {
-                onSetHdrMode(true)
+            // 使用系统电池状态做实时判定，避免 UI 状态与事件的时序竞态导致误拦截
+            val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val isChargingNow = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+            if (isChargingNow) {
                 showHdrGlow = true
             }
         }
@@ -138,6 +149,7 @@ fun DashboardScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 scrollBehavior = scrollBehavior,
@@ -154,12 +166,11 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-                    Box(
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .squishyClickable { onNavigateToSettings() },
-                        contentAlignment = Alignment.Center
-                    ) {
+                    IconButton(onClick = {
+                        // 切到设置页前先恢复默认色域，避免过渡帧出现全屏提亮
+                        onSetHdrMode(false)
+                        onNavigateToSettings()
+                    }) {
                         Icon(Icons.Default.Settings, "设置")
                     }
                 }
@@ -349,7 +360,6 @@ fun DashboardScreen(
                             visible = showHdrGlow,
                             onAnimationEnd = {
                                 showHdrGlow = false
-                                onSetHdrMode(false)
                             },
                             modifier = Modifier.weight(1f)
                         ) {

@@ -4,8 +4,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 object BatteryEngine {
+    fun applyCurrentAdjustments(rawCurrentMa: Float, invert: Boolean, isDoubleCell: Boolean): Float {
+        var adjusted = rawCurrentMa
+        if (invert) adjusted *= -1f
+        if (isDoubleCell) adjusted *= 2f
+        return adjusted
+    }
+
     /**
      * 获取系统设定的电池设计容量 (mAh)
      */
@@ -91,10 +100,30 @@ object BatteryEngine {
      * 获取修正后的电流 (考虑反转和双芯)
      */
     fun getAdjustedCurrentMa(context: Context, invert: Boolean, isDoubleCell: Boolean): Float {
-        var current = getCurrentMa(context)
-        if (invert) current *= -1f
-        if (isDoubleCell) current *= 2f
-        return current
+        return applyCurrentAdjustments(
+            rawCurrentMa = getCurrentMa(context),
+            invert = invert,
+            isDoubleCell = isDoubleCell
+        )
+    }
+
+    /**
+     * 整千电流异常过滤：
+     * 在外接电源状态下（AC/USB/无线等），当电量 > 98% 时，
+     * 若电流读数为“整千 mA”（如 ±1000、±2000、±10000），则钳制为 0mA。
+     */
+    fun sanitizeCurrentReading(rawCurrentMa: Float, level: Int, status: Int, plugged: Int): Float {
+        val onExternalPower = plugged != 0
+        val nearFull = level > 98
+
+        val nearestInt = rawCurrentMa.roundToInt()
+        val isInteger = abs(rawCurrentMa - nearestInt.toFloat()) < 0.001f
+        val isWholeThousand = isInteger && abs(nearestInt) >= 1000 && abs(nearestInt) % 1000 == 0
+
+        if (onExternalPower && nearFull && isWholeThousand) {
+            return 0f
+        }
+        return rawCurrentMa
     }
 
     /**
@@ -142,7 +171,7 @@ object BatteryEngine {
         // 防止除以零
         if (totalCapacity <= 0) return 3.8f
         
-        val ratio = currentCapacity.toFloat() / totalCapacity
+        val ratio = (currentCapacity.toFloat() / totalCapacity).coerceIn(0f, 1f)
         
         // 1. 计算基础电压 (模拟放电曲线)
         // 1.0 (100%) -> 4.45V

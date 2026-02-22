@@ -1,6 +1,5 @@
 package com.lele.llpower.ui.dashboard
 
-import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -12,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.room.Room
 import com.lele.llpower.data.BatteryEngine
 import com.lele.llpower.data.BatteryRepository
 import com.lele.llpower.data.SettingsManager
@@ -22,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // 保持 InstantBatteryState 数据类不变
 data class InstantBatteryState(
@@ -62,7 +61,7 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.Default) {
             var lastIsCharging: Boolean? = null  // 上一次的充电状态
             var lastPlugged: Int? = null         // 上一次的电源类型
             var lastFullUpdateTime = 0L          // 上一次完整数据更新时间
@@ -95,7 +94,10 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
                     }
                     
                     // 状态变化 或 达到刷新间隔：执行完整数据更新
-                    updateInstantStatus()
+                    val newStatus = buildInstantStatus(context, intent)
+                    withContext(Dispatchers.Main) {
+                        instantStatus = newStatus
+                    }
                     lastFullUpdateTime = currentTime
                 }
                 
@@ -109,22 +111,29 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun updateInstantStatus() {
-        val context = getApplication<Application>().applicationContext
+    private fun buildInstantStatus(context: Context, intent: Intent?): InstantBatteryState {
         val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
         val invert = SettingsManager.isInvertCurrent.value
         val doubleCell = SettingsManager.isDoubleCell.value
+        val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
 
-        val finalCurrent = BatteryEngine.getAdjustedCurrentMa(context, invert, doubleCell)
+        val rawCurrent = BatteryEngine.getCurrentMa(context)
+        val sanitizedRawCurrent = BatteryEngine.sanitizeCurrentReading(
+            rawCurrentMa = rawCurrent,
+            level = level,
+            status = status,
+            plugged = plugged
+        )
+        val finalCurrent = BatteryEngine.applyCurrentAdjustments(sanitizedRawCurrent, invert, doubleCell)
         
         // 虚拟电压逻辑
         val useVirtualVoltage = SettingsManager.isVirtualVoltageEnabled.value
         val voltageV = if (useVirtualVoltage) {
              val totalCapacity = BatteryEngine.getBatteryDesignCapacity(context)
              val currentCapacity = BatteryEngine.getBatteryCurrentCapacity(context)
-             val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
              val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || 
                               status == BatteryManager.BATTERY_STATUS_FULL
              BatteryEngine.getVirtualVoltage(currentCapacity, totalCapacity, isCharging)
@@ -136,7 +145,6 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
 
         val finalPower = if (kotlin.math.abs(rawPower) < 0.005f) 0.0f else rawPower
 
-        val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
         val supply = when (plugged) {
             BatteryManager.BATTERY_PLUGGED_AC -> "电源适配器"
             BatteryManager.BATTERY_PLUGGED_USB -> "电脑 (USB)"
@@ -163,7 +171,6 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val statusText = when (status) {
             BatteryManager.BATTERY_STATUS_CHARGING -> "充电中"
             BatteryManager.BATTERY_STATUS_DISCHARGING -> "放电中"
@@ -171,11 +178,11 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
             else -> "状态正常"
         }
 
-        instantStatus = instantStatus.copy(
+        return instantStatus.copy(
             current = finalCurrent,
             voltage = voltageV,
             power = finalPower,
-            capacity = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER) / 1000,
+            capacity = BatteryEngine.getBatteryCurrentCapacity(context).toLong(),
             totalCapacity = designCapacity,
             statusText = statusText,
             supplyStatus = supply,

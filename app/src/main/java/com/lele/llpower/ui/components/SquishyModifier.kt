@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * A Material 3 Expressive "Squishy" modifier that scales down on press.
- * Restored ripples and improved click reliability using collectIsPressedAsState.
  */
 fun Modifier.squishyClickable(
     interactionSource: MutableInteractionSource? = null,

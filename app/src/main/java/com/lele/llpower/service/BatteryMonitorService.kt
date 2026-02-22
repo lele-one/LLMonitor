@@ -26,6 +26,8 @@ class BatteryMonitorService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var db: AppDatabase
     private var designCapacity: Int = 0
+    private var isForceUpdateReceiverRegistered = false
+    private var isNotificationDismissReceiverRegistered = false
     
     // 充电状态变化广播接收器，用于立即响应充电器插拔
     private var powerStateReceiver: BroadcastReceiver? = null
@@ -80,31 +82,42 @@ class BatteryMonitorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         createNotificationChannel()
-        
-        // 注册强制刷新广播
-        val filter = IntentFilter("com.lele.llpower.ACTION_FORCE_UPDATE")
-        registerReceiver(forceUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        
-        // 注册通知划掉广播 (必须 Exported，由系统 NotificationManager 触发)
-        ContextCompat.registerReceiver(
-            this,
-            notificationDismissReceiver,
-            IntentFilter(ACTION_NOTIFICATION_DISMISSED),
-            ContextCompat.RECEIVER_EXPORTED
-        )
-        
-        // 启动前台服务 (显示初始通知)
-        startForeground(NOTIFICATION_ID, createInitialNotification())
-
         SettingsManager.init(applicationContext)
         designCapacity = BatteryEngine.getBatteryDesignCapacity(applicationContext)
         db = AppDatabase.getInstance(applicationContext)
+        
+        // 注册强制刷新广播
+        if (!isForceUpdateReceiverRegistered) {
+            val filter = IntentFilter("com.lele.llpower.ACTION_FORCE_UPDATE")
+            registerReceiver(forceUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            isForceUpdateReceiverRegistered = true
+        }
+        
+        // 注册通知划掉广播（仅允许系统/本应用触发，避免第三方伪造广播）
+        if (!isNotificationDismissReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                notificationDismissReceiver,
+                IntentFilter(ACTION_NOTIFICATION_DISMISSED),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            isNotificationDismissReceiverRegistered = true
+        }
+        
+        // 启动前台服务 (显示初始通知)
+        startForeground(NOTIFICATION_ID, createInitialNotification())
         
         // 注册充电状态变化广播接收器
         if (powerStateReceiver == null) {
             powerStateReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
-                    // 收到充电器插拔事件，触发立即更新
+                    // 拔线时先立即刷新一次通知，避免灵动岛残留到下一个周期
+                    if (intent?.action == Intent.ACTION_POWER_DISCONNECTED) {
+                        serviceScope.launch {
+                            forceImmediateNotificationRefresh(pluggedOverride = 0)
+                        }
+                    }
+                    // 收到充电器插拔事件，触发立即更新循环
                     updateTrigger.trySend(Unit)
                 }
             }
@@ -127,7 +140,6 @@ class BatteryMonitorService : Service() {
             delay(500L)
             
             var lastRecordTime = 0L
-            var lastWidgetUpdateTime = 0L
 
             while (isActive) {
                 val loopStartTime = SystemClock.elapsedRealtime()
@@ -144,15 +156,23 @@ class BatteryMonitorService : Service() {
                     val tempRaw = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
                     val tempC = tempRaw / 10f
                     val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
                     val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || 
                                      status == BatteryManager.BATTERY_STATUS_FULL
 
-                    // 2. 获取电流和电压 (应用修正设置)
+                    // 2. 获取电流和电压
                     val invert = SettingsManager.isInvertCurrent.value
                     val doubleCell = SettingsManager.isDoubleCell.value
                     val useVirtualVoltage = SettingsManager.isVirtualVoltageEnabled.value
                     
-                    val currentMa = BatteryEngine.getAdjustedCurrentMa(applicationContext, invert, doubleCell)
+                    // 原始电流：入库时保持原始值，便于后续在显示层动态套用修正
+                    val rawCurrentMa = BatteryEngine.getCurrentMa(applicationContext)
+                    val sanitizedRawCurrentMa = BatteryEngine.sanitizeCurrentReading(
+                        rawCurrentMa = rawCurrentMa,
+                        level = level,
+                        status = status,
+                        plugged = plugged
+                    )
                     
                     // 根据设置选择真实电压或虚拟电压
                     val voltageV = if (useVirtualVoltage) {
@@ -163,15 +183,16 @@ class BatteryMonitorService : Service() {
                         BatteryEngine.getVoltageV(applicationContext)
                     }
                     
-                    val powerW = voltageV * (currentMa / 1000f)
+                    // 原始功率（基于原始电流）
+                    val rawPowerW = voltageV * (sanitizedRawCurrentMa / 1000f)
 
                     // 构造实体对象
                     val entry = BatteryEntity(
                         timestamp = currentTime,
                         level = level,
                         voltage = voltageV,
-                        current = currentMa,
-                        power = powerW,
+                        current = sanitizedRawCurrentMa,
+                        power = rawPowerW,
                         temperature = tempC
                     )
 
@@ -184,13 +205,11 @@ class BatteryMonitorService : Service() {
                     targetDelay = currentNotifyInterval
 
                     // 2. 通知 + 组件更新：以设置里的通知刷新率为准，严格防抖
-                    val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
                     val now = SystemClock.elapsedRealtime()
                     if (now - lastNotificationTime >= currentNotifyInterval) {
                         updateNotification(entry, level, plugged)
                         updateWidget(entry, tempC)
                         lastNotificationTime = now
-                        lastWidgetUpdateTime = currentTime
                     }
 
                     // 2.5 实时更新：推送给 UI 仓库用于绘图 (不再依赖 60s 记录)
@@ -236,6 +255,51 @@ class BatteryMonitorService : Service() {
 
     // 移除旧的 recordBatteryData 方法，逻辑已合并到主循环中
     // 保留辅助方法
+
+    private suspend fun forceImmediateNotificationRefresh(pluggedOverride: Int? = null) {
+        try {
+            val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: 0
+            val tempRaw = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
+            val tempC = tempRaw / 10f
+            val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val plugged = pluggedOverride ?: (batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0)
+            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+
+            val rawCurrentMa = BatteryEngine.getCurrentMa(applicationContext)
+            val sanitizedRawCurrentMa = BatteryEngine.sanitizeCurrentReading(
+                rawCurrentMa = rawCurrentMa,
+                level = level,
+                status = status,
+                plugged = plugged
+            )
+
+            val useVirtualVoltage = SettingsManager.isVirtualVoltageEnabled.value
+            val voltageV = if (useVirtualVoltage) {
+                val totalCapacity = BatteryEngine.getBatteryDesignCapacity(applicationContext)
+                val currentCapacity = BatteryEngine.getBatteryCurrentCapacity(applicationContext)
+                BatteryEngine.getVirtualVoltage(currentCapacity, totalCapacity, isCharging)
+            } else {
+                BatteryEngine.getVoltageV(applicationContext)
+            }
+
+            val entry = BatteryEntity(
+                timestamp = System.currentTimeMillis(),
+                level = level,
+                voltage = voltageV,
+                current = sanitizedRawCurrentMa,
+                power = voltageV * (sanitizedRawCurrentMa / 1000f),
+                temperature = tempC
+            )
+
+            updateNotification(entry, level, plugged)
+            updateWidget(entry, tempC)
+            lastNotificationTime = SystemClock.elapsedRealtime()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     
     /**
      * 更新 Glance 小组件状态
@@ -244,11 +308,10 @@ class BatteryMonitorService : Service() {
         val invert = SettingsManager.isInvertCurrent.value
         val doubleCell = SettingsManager.isDoubleCell.value
 
-        val displayCurrent = BatteryEngine.getAdjustedCurrentMa(applicationContext, invert, doubleCell)
+        val displayCurrent = BatteryEngine.applyCurrentAdjustments(entry.current, invert, doubleCell)
         val displayPower = entry.voltage * (displayCurrent / 1000f)
 
-        val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val currentCapacity = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER) / 1000
+        val currentCapacity = BatteryEngine.getBatteryCurrentCapacity(applicationContext)
         val updateTimeStr = BatteryUtils.formatTimestamp(System.currentTimeMillis())
 
         val context = applicationContext
@@ -260,7 +323,7 @@ class BatteryMonitorService : Service() {
             updateAppWidgetState(context, glanceId) { prefs ->
                 prefs[BatteryWidgetKeys.POWER] = displayPower
                 prefs[BatteryWidgetKeys.CURRENT] = displayCurrent
-                prefs[BatteryWidgetKeys.CAPACITY] = currentCapacity.toInt()
+                prefs[BatteryWidgetKeys.CAPACITY] = currentCapacity
                 prefs[BatteryWidgetKeys.TOTAL_CAPACITY] = designCapacity
                 prefs[BatteryWidgetKeys.TEMP] = temp
                 prefs[BatteryWidgetKeys.UPDATE_TIME] = updateTimeStr
@@ -340,6 +403,11 @@ class BatteryMonitorService : Service() {
             BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
             else -> "Battery"
         }
+
+        val invert = SettingsManager.isInvertCurrent.value
+        val doubleCell = SettingsManager.isDoubleCell.value
+        val displayCurrent = BatteryEngine.applyCurrentAdjustments(entry.current, invert, doubleCell)
+        val displayPower = entry.voltage * (displayCurrent / 1000f)
         
         // --- Live Notification Builder ---
         var liveNotification: Notification? = null
@@ -357,7 +425,6 @@ class BatteryMonitorService : Service() {
             if (isCharging) Color.GREEN else Color.GRAY
         }
 
-        val islandIcon = Icon.createWithResource(this, com.lele.llpower.R.drawable.ic_dot)
         val progressStyle = Notification.ProgressStyle()
             .setProgressTrackerIcon(Icon.createWithResource(this, com.lele.llpower.R.drawable.ic_dot))
             .addProgressSegment(
@@ -387,8 +454,8 @@ class BatteryMonitorService : Service() {
             val builder = Notification.Builder(this, LIVE_CHANNEL_ID) // 使用灵动岛专用通道
                 .setSmallIcon(supplyIcon)
                 .setColor(color) // 适配 Monet 动态取色
-                .setContentTitle("${String.format("%.1f", entry.power)}W")
-                .setContentText("$level% • $supplyText • ${String.format("%.2f", entry.voltage)}V • ${entry.current.toInt()}mA • ${String.format("%.1f", entry.temperature)}℃")
+                .setContentTitle("${String.format("%.1f", displayPower)}W")
+                .setContentText("$level% • $supplyText • ${String.format("%.2f", entry.voltage)}V • ${displayCurrent.toInt()}mA • ${String.format("%.1f", entry.temperature)}℃")
                 .setStyle(progressStyle)
                 .setOngoing(true) // 灵动岛必须为 ongoing
                 .setOnlyAlertOnce(true)
@@ -408,8 +475,8 @@ class BatteryMonitorService : Service() {
              val builder = Notification.Builder(this, channelId)
                 .setSmallIcon(com.lele.llpower.R.drawable.ic_dot)
                 .setLargeIcon(null as android.graphics.Bitmap?)
-                .setContentTitle("${String.format("%.1f", entry.power)}W")
-                .setContentText("$level% • $supplyText • ${String.format("%.2f", entry.voltage)}V • ${entry.current.toInt()}mA • ${String.format("%.1f", entry.temperature)}℃")
+                .setContentTitle("${String.format("%.1f", displayPower)}W")
+                .setContentText("$level% • $supplyText • ${String.format("%.2f", entry.voltage)}V • ${displayCurrent.toInt()}mA • ${String.format("%.1f", entry.temperature)}℃")
                 .setProgress(100, level, false)
                 .setOngoing(false)
                 .setOnlyAlertOnce(true)
@@ -441,6 +508,7 @@ class BatteryMonitorService : Service() {
         } else {
             // 情况 D: 都不显示
             stopForeground(STOP_FOREGROUND_REMOVE)
+            manager.cancel(ID_NORMAL)
             manager.cancel(ID_LIVE)
         }
     }
@@ -543,8 +611,14 @@ class BatteryMonitorService : Service() {
         }
         powerStateReceiver = null
         serviceScope.cancel()
-        try { unregisterReceiver(forceUpdateReceiver) } catch (_: Exception) {}
-        try { unregisterReceiver(notificationDismissReceiver) } catch (_: Exception) {}
+        if (isForceUpdateReceiverRegistered) {
+            try { unregisterReceiver(forceUpdateReceiver) } catch (_: Exception) {}
+            isForceUpdateReceiverRegistered = false
+        }
+        if (isNotificationDismissReceiverRegistered) {
+            try { unregisterReceiver(notificationDismissReceiver) } catch (_: Exception) {}
+            isNotificationDismissReceiverRegistered = false
+        }
         super.onDestroy()
     }
 }

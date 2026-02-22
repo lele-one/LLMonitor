@@ -4,7 +4,6 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
@@ -20,11 +19,15 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lele.llpower.data.BatteryEngine
 import com.lele.llpower.data.local.BatteryEntity
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.roundToInt
 
 @Composable
 fun PowerCurveCard(
@@ -47,13 +50,15 @@ fun PowerCurveCard(
     val points = remember(history.toList(), now, invert, isDualCell) {
         history.filter { it.timestamp >= startTime }
             .sortedBy { it.timestamp }
-            .map { 
-                // Restore logic: although service corrects it, 
-                // we might need UI-side scaling if the user expects it or if data is raw.
-                // Keeping it as a placeholder/multiplier for future-proofing as user requested these params.
+            .map {
+                val correctedCurrent = BatteryEngine.applyCurrentAdjustments(
+                    rawCurrentMa = it.current,
+                    invert = invert,
+                    isDoubleCell = isDualCell
+                )
                 PointData(
                     timestamp = it.timestamp,
-                    power = it.power
+                    power = it.voltage * (correctedCurrent / 1000f)
                 )
             }
     }
@@ -89,7 +94,7 @@ fun PowerCurveCard(
     val canvasWidth = chartAreaWidth * totalWidthRatio
 
     val scrollState = rememberScrollState()
-    val isDragged by scrollState.interactionSource.collectIsDraggedAsState()
+    var hasInitialAligned by remember { mutableStateOf(false) }
     
     // 判断是否处于"跟随最新"状态 (允许少量误差)
     val isAtBottom by remember { 
@@ -98,20 +103,32 @@ fun PowerCurveCard(
         } 
     }
 
-    // 自动滚动逻辑 1: 初始加载和数据更新时滚动到最新
+    // 初次布局完成后，先对齐到最新点
+    LaunchedEffect(scrollState.maxValue) {
+        if (!hasInitialAligned && scrollState.maxValue > 0) {
+            scrollState.scrollTo(scrollState.maxValue)
+            hasInitialAligned = true
+        }
+    }
+
+    // 自动滚动逻辑 1: 数据更新时，在“跟随最新”状态下保持贴边
     LaunchedEffect(points.size, scrollState.maxValue) {
-        // 等待布局完成 (maxValue > 0)
-        if (scrollState.maxValue > 0 && !isDragged) {
+        if (hasInitialAligned && scrollState.maxValue > 0 && !scrollState.isScrollInProgress && isAtBottom) {
             scrollState.scrollTo(scrollState.maxValue)
         }
     }
 
-    // 自动滚动逻辑 2: 拖拽释放后，延迟 5 秒自动回到底部
-    LaunchedEffect(isDragged) {
-        if (!isDragged) {
-            delay(5000L)
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
+    // 自动滚动逻辑 2: 横向滚动停止 3 秒后自动回到底部（仅触发一次完整动画）
+    @OptIn(FlowPreview::class)
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.value to scrollState.maxValue }
+            .distinctUntilChanged()
+            .debounce(3000L)
+            .collect { (value, max) ->
+                if (max > 0 && value < max - 2) {
+                    scrollState.animateScrollTo(max)
+                }
+            }
     }
 
     ElevatedCard(
