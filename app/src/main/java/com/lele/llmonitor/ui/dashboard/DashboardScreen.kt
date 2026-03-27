@@ -31,7 +31,6 @@ import com.lele.llmonitor.ui.components.rememberActiveRingRotationState
 import com.lele.llmonitor.ui.components.squishyClickable
 import com.lele.llmonitor.ui.theme.AppCorners
 import com.lele.llmonitor.ui.theme.AppShapes
-import com.lele.llmonitor.ui.theme.ThemePalettePreset
 import com.lele.llmonitor.ui.theme.isAppInDarkTheme
 import com.lele.llmonitor.ui.theme.llClassCardBorderColor
 import com.lele.llmonitor.ui.theme.resolveThemePaletteActiveRingAccentColors
@@ -60,8 +59,8 @@ fun DashboardScreen(
 ) {
     val history = viewModel.displayHistory
     val liveInstant = viewModel.instantStatus
-    val shouldPlayEntrance = viewModel.shouldPlayDashboardEntrance
-    var isEntranceRunning by remember(shouldPlayEntrance) { mutableStateOf(shouldPlayEntrance) }
+    val shouldRunEntrance = viewModel.shouldRunEntrance
+    val startupPhase = viewModel.homeStartupPhase
 
     // 1. 从 SettingsManager 读取设置
     val invertCurrent by SettingsManager.isInvertCurrent
@@ -92,8 +91,7 @@ fun DashboardScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var isIgnoringBatteryOptimizations by remember {
-        // 冷启动优先保障动画；系统查询异步执行，避免首帧主线程阻塞。
-        mutableStateOf(true)
+        mutableStateOf(viewModel.cachedIsIgnoringBatteryOptimizations)
     }
     val dashboardScope = rememberCoroutineScope()
 
@@ -114,6 +112,12 @@ fun DashboardScreen(
         )
     }
     var animatedCardKeys by remember { mutableStateOf(setOf<String>()) }
+    LaunchedEffect(isIgnoringBatteryOptimizations, hasNotificationPermission) {
+        viewModel.updateDashboardPermissionCache(
+            isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
+            hasNotificationPermission = hasNotificationPermission
+        )
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -172,22 +176,41 @@ fun DashboardScreen(
     val showPowerActiveRing = instant.isCharging
     val showBatteryHeatRing = isHighTemperature
     val isNotificationDismissed by SettingsManager.isNotificationPermissionDismissed
-    val showNotificationCard = !hasNotificationPermission &&
+    val rawShowNotificationCard = !hasNotificationPermission &&
         !isNotificationDismissed &&
         android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
     val isBatteryOptDismissed by SettingsManager.isBatteryOptimizationDismissed
-    val showBatteryOptCard = !isIgnoringBatteryOptimizations && !isBatteryOptDismissed
-    val showSuggestionCard = showVirtualVoltageSuggestion
+    val rawShowBatteryOptCard = !isIgnoringBatteryOptimizations && !isBatteryOptDismissed
+    val rawShowSuggestionCard = showVirtualVoltageSuggestion
+    val rawOptionalCards = DashboardOptionalCardsState(
+        showNotificationCard = rawShowNotificationCard,
+        showBatteryOptCard = rawShowBatteryOptCard,
+        showSuggestionCard = rawShowSuggestionCard
+    )
+    LaunchedEffect(Unit) {
+        viewModel.onDashboardEntered(rawOptionalCards)
+    }
+    LaunchedEffect(rawOptionalCards) {
+        viewModel.updateOptionalCardsSnapshot(rawOptionalCards)
+    }
+
+    val renderedOptionalCards = when (startupPhase) {
+        HomeStartupPhase.EnterAnimating -> viewModel.dashboardOptionalCardsSnapshot
+        HomeStartupPhase.ColdPending,
+        HomeStartupPhase.Stable -> rawOptionalCards
+    }
+    val showNotificationCard = renderedOptionalCards.showNotificationCard
+    val showBatteryOptCard = renderedOptionalCards.showBatteryOptCard
+    val showSuggestionCard = renderedOptionalCards.showSuggestionCard
     val totalAnimatedItems = (if (showNotificationCard) 1 else 0) +
         (if (showBatteryOptCard) 1 else 0) +
         (if (showSuggestionCard) 1 else 0) +
         6
 
-    LaunchedEffect(isEntranceRunning, totalAnimatedItems, animatedCardKeys.size) {
-        if (!isEntranceRunning) return@LaunchedEffect
+    LaunchedEffect(shouldRunEntrance, totalAnimatedItems, animatedCardKeys.size) {
+        if (!shouldRunEntrance) return@LaunchedEffect
         if (totalAnimatedItems <= 0 || animatedCardKeys.size >= totalAnimatedItems) {
-            isEntranceRunning = false
-            viewModel.markDashboardEntrancePlayed()
+            viewModel.onDashboardEntranceFinished()
         }
     }
 
@@ -206,11 +229,11 @@ fun DashboardScreen(
     }
 
     fun hasAnimated(entryKey: String): Boolean {
-        return !isEntranceRunning || animatedCardKeys.contains(entryKey)
+        return !shouldRunEntrance || animatedCardKeys.contains(entryKey)
     }
 
     fun markAnimated(entryKey: String) {
-        if (isEntranceRunning && !animatedCardKeys.contains(entryKey)) {
+        if (shouldRunEntrance && !animatedCardKeys.contains(entryKey)) {
             animatedCardKeys = animatedCardKeys + entryKey
         }
     }

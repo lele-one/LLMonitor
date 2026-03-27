@@ -1,3 +1,9 @@
 <resources>
-    <string name="app_name">LLPower</string>
+    <string name="app_name">LLMonitor</string>
+    <string name="app_icon_palette_dynamic_multicolor">Dynamic Spectrum</string>
+    <string name="app_icon_palette_ocean">Ocean Blue</string>
+    <string name="app_icon_palette_forest">Forest Green</string>
+    <string name="app_icon_palette_sunset">Sunset Amber</string>
+    <string name="app_icon_palette_blossom">Blossom Pink</string>
+    <string name="app_icon_palette_jizi">Misty Violet</string>
 </resources>

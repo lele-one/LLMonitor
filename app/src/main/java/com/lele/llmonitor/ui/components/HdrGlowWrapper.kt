@@ -1,16 +1,15 @@
 package com.lele.llmonitor.ui.components
 
+import android.os.SystemClock
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -42,6 +41,7 @@ private val ActiveRingDrawOutset: Dp = 14.dp
 private val ActiveRingOuterStrokeWidth: Dp = 2.4.dp
 private val ActiveRingInnerStrokeWidth: Dp = 1.2.dp
 private const val ActiveRingOuterAlpha: Float = 0.42f
+private const val ActiveRingRotationCycleMs: Long = 2000L
 private val DefaultActiveBorderColors = listOf(
     Color(0xFF4285F4),
     Color(0xFFEA4335),
@@ -73,16 +73,17 @@ private val ActiveRingHaloSpecs = listOf(
 
 @Composable
 fun rememberActiveRingRotationState(): State<Float> {
-    val infiniteTransition = rememberInfiniteTransition(label = "active_ring_flow")
-    return infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "active_ring_rotation"
-    )
+    return produceState(
+        initialValue = (SystemClock.elapsedRealtime() % ActiveRingRotationCycleMs)
+            .toFloat() * 360f / ActiveRingRotationCycleMs
+    ) {
+        while (true) {
+            withFrameNanos {
+                val elapsedInCycle = SystemClock.elapsedRealtime() % ActiveRingRotationCycleMs
+                value = elapsedInCycle.toFloat() * 360f / ActiveRingRotationCycleMs
+            }
+        }
+    }
 }
 
 @Composable

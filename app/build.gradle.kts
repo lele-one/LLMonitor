@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.jetbrains.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)
 }
@@ -18,6 +17,8 @@ val releaseStoreFile = localProperties.getProperty("RELEASE_STORE_FILE")
 val releaseStorePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
 val releaseKeyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+val fullRelease = providers.gradleProperty("fullRelease").orNull == "true"
+val releaseLint = providers.gradleProperty("releaseLint").orNull == "true"
 val hasLocalReleaseSigning = listOf(
     releaseStoreFile,
     releaseStorePassword,
@@ -58,20 +59,27 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Fast local default for "Install Release".
+            // Use -PfullRelease=true to restore publish-grade release pipeline.
+            isMinifyEnabled = fullRelease
+            isShrinkResources = fullRelease
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+        create("fullRelease") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("release")
+            // Select this in Build Variants for a publish-grade optimized release.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            matchingFallbacks += listOf("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -82,9 +90,14 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    lint {
+        // Keep local release install fast by default.
+        // Enable with -PreleaseLint=true or -PfullRelease=true.
+        checkReleaseBuilds = fullRelease || releaseLint
+    }
 
     sourceSets.getByName("main").assets.srcDir(
-        layout.buildDirectory.dir("generated/openSource/assets")
+        layout.buildDirectory.dir("generated/openSource/assets").get().asFile
     )
 }
 
@@ -144,17 +157,17 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // 导航：只保留这一个稳定引用，解决 MainActivity 报错
-    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation(libs.androidx.navigation.compose)
 
     // Compose（与 LLClass 同款显式版本链）
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation("com.google.android.material:material:1.12.0")
+    implementation(libs.google.material)
     implementation(libs.androidx.compose.material.icons.extended)
-    implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.google.code.gson:gson:2.11.0")
+    implementation(libs.coil.compose)
+    implementation(libs.google.gson)
 
     // Room 数据库
     implementation(libs.androidx.room.runtime)
@@ -164,10 +177,10 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     // YCharts 图表库
-    implementation("co.yml:ycharts:2.1.0")
+    implementation(libs.ycharts)
 
-    implementation("androidx.glance:glance-appwidget:1.1.0")
-    implementation("androidx.glance:glance-material3:1.1.0") // Material 3 支持
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
 
     // 测试依赖
     testImplementation(libs.junit)

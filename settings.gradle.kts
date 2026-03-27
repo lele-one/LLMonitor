@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LLPower"
+rootProject.name = "LLMonitor"
 include(":app")
  

@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">LLMonitor</string>
+    <string name="app_icon_palette_dynamic_multicolor">动态多彩</string>
+    <string name="app_icon_palette_ocean">沧蓝</string>
+    <string name="app_icon_palette_forest">松青</string>
+    <string name="app_icon_palette_sunset">曛橙</string>
+    <string name="app_icon_palette_blossom">樱霭</string>
+    <string name="app_icon_palette_jizi">霁紫</string>
+</resources>
