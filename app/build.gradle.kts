@@ -17,7 +17,6 @@ val releaseStoreFile = localProperties.getProperty("RELEASE_STORE_FILE")
 val releaseStorePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
 val releaseKeyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
-val fullRelease = providers.gradleProperty("fullRelease").orNull == "true"
 val releaseLint = providers.gradleProperty("releaseLint").orNull == "true"
 val hasLocalReleaseSigning = listOf(
     releaseStoreFile,
@@ -58,20 +57,28 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
-            // Fast local default for "Install Release".
-            // Use -PfullRelease=true to restore publish-grade release pipeline.
-            isMinifyEnabled = fullRelease
-            isShrinkResources = fullRelease
+            // Standard release variant kept for ecosystem/tooling compatibility.
+            // Explicitly uses debug signing as requested.
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-        create("fullRelease") {
+        create("fastrelease") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            // Renamed from previous local-fast release behavior.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += listOf("release")
+        }
+        create("silmrelease") {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("release")
-            // Select this in Build Variants for a publish-grade optimized release.
+            // Renamed from previous fullRelease behavior.
             isMinifyEnabled = true
             isShrinkResources = true
             matchingFallbacks += listOf("release")
@@ -91,9 +98,7 @@ android {
         }
     }
     lint {
-        // Keep local release install fast by default.
-        // Enable with -PreleaseLint=true or -PfullRelease=true.
-        checkReleaseBuilds = fullRelease || releaseLint
+        checkReleaseBuilds = releaseLint
     }
 
     sourceSets.getByName("main").assets.srcDir(
