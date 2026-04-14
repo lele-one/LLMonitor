@@ -50,14 +50,21 @@ import com.lele.llmonitor.ui.navigation.MainNavHost
 import com.lele.llmonitor.ui.soc.SocScreen
 import com.lele.llmonitor.ui.theme.LLMonitorTheme
 import com.lele.llmonitor.ui.theme.resolveAppColorScheme
+import com.lele.llmonitor.ui.widget.forceRefreshBatteryWidgetsOnce
 import com.lele.llmonitor.ui.wallpaper.HomeWallpaperImage
 import com.lele.llmonitor.ui.wallpaper.homeWallpaperBlur
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import java.io.File
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        @Volatile
+        private var hasForcedWidgetRefreshInCurrentProcess: Boolean = false
+    }
+
     private var isHdrModeEnabled: Boolean = false
 
     private fun resolveLaunchDarkTheme(themeMode: Int): Boolean {
@@ -164,6 +171,15 @@ class MainActivity : ComponentActivity() {
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+        }
+
+        if (!hasForcedWidgetRefreshInCurrentProcess) {
+            hasForcedWidgetRefreshInCurrentProcess = true
+            lifecycleScope.launch(Dispatchers.Default) {
+                runCatching {
+                    forceRefreshBatteryWidgetsOnce(applicationContext)
+                }
             }
         }
 

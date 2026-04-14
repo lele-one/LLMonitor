@@ -45,6 +45,7 @@ import com.lele.llmonitor.data.soc.SourceProbe
 import com.lele.llmonitor.data.soc.ThermalZoneReading
 import com.lele.llmonitor.ui.components.HomeCard
 import com.lele.llmonitor.ui.components.InfoCard
+import com.lele.llmonitor.ui.components.squishyClickable
 import com.lele.llmonitor.ui.theme.AppCorners
 import com.lele.llmonitor.ui.theme.AppShapes
 import com.lele.llmonitor.ui.theme.llClassSectionMetaColor
@@ -107,7 +108,7 @@ fun SocScreen(
                     InfoCard(
                         label = com.lele.llmonitor.i18n.l10n("CPU 占用"),
                         value = snapshot?.cpuUsagePercent?.let { formatPercent(it) } ?: com.lele.llmonitor.i18n.l10n("受限"),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).squishyClickable { /* Optional tap logic */ },
                         sourceLines = if (isDebugMode) toSourceLines(snapshot?.cpuUsageSources.orEmpty()) else emptyList()
                     )
                     InfoCard(
@@ -115,7 +116,7 @@ fun SocScreen(
                         value = snapshot?.socTemperatureC?.let {
                             formatTemp(it, snapshot.socTemperatureFractionDigits ?: 1)
                         } ?: "--",
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).squishyClickable { /* Optional tap logic */ },
                         sourceLines = if (isDebugMode) tempSourceLines(
                             selectedZone = snapshot?.socTemperatureSource,
                             probes = snapshot?.socTemperatureSources.orEmpty()
@@ -129,12 +130,12 @@ fun SocScreen(
                     InfoCard(
                         label = com.lele.llmonitor.i18n.l10n("在线CPU核心"),
                         value = snapshot?.let { "${it.onlineCores} / ${it.totalCores}" } ?: "--",
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).squishyClickable { /* Optional tap logic */ }
                     )
                     InfoCard(
                         label = com.lele.llmonitor.i18n.l10n("系统1min负载"),
                         value = formatNullable(snapshot?.loadAvg1),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).squishyClickable { /* Optional tap logic */ },
                         sourceLines = if (isDebugMode) toSourceLines(snapshot?.loadAvgSources.orEmpty()) else emptyList()
                     )
                 }
@@ -143,7 +144,7 @@ fun SocScreen(
             item(key = "soc_metrics_row_3") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     InfoCard(
-                        label = "${com.lele.llmonitor.i18n.l10n("内存占用")} ${formatMemoryUsagePercent(
+                        label = "${com.lele.llmonitor.i18n.l10n("内存占用")}(GB) ${formatMemoryUsagePercent(
                             totalBytes = snapshot?.memoryTotalBytes,
                             availableBytes = snapshot?.memoryAvailableBytes
                         )}",
@@ -151,7 +152,7 @@ fun SocScreen(
                             totalBytes = snapshot?.memoryTotalBytes,
                             availableBytes = snapshot?.memoryAvailableBytes
                         ),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).squishyClickable { /* Optional tap logic */ },
                         singleLineAutoShrink = true,
                         singleLineAutoShrinkReferenceText = memoryValueReferenceText(snapshot?.memoryTotalBytes),
                         sourceLines = if (isDebugMode) toSourceLines(snapshot?.memorySources.orEmpty()) else emptyList()
@@ -159,7 +160,7 @@ fun SocScreen(
                     InfoCard(
                         label = com.lele.llmonitor.i18n.l10n("CPU 型号"),
                         value = snapshot?.cpuModelName ?: "--",
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).squishyClickable { /* Optional tap logic */ },
                         singleLineAutoShrink = true,
                         sourceLines = if (isDebugMode) toSourceLines(snapshot?.cpuModelSources.orEmpty()) else emptyList()
                     )
@@ -366,7 +367,7 @@ private fun CoreFrequencyCell(
     }
 
     HomeCard(
-        modifier = modifier,
+        modifier = modifier.squishyClickable { /* Optional tap logic */ },
         accentColor = MaterialTheme.colorScheme.primary
     ) {
         DashboardCoreCellContent(
@@ -738,7 +739,7 @@ private fun formatMemoryUsedOverTotal(totalBytes: Long?, availableBytes: Long?):
     val used = (total - available).coerceAtLeast(0L)
     val usedGiB = used / (1024.0 * 1024.0 * 1024.0)
     val totalGiB = total / (1024.0 * 1024.0 * 1024.0)
-    return String.format(Locale.getDefault(), "%.1f / %.1f GB", usedGiB, totalGiB)
+    return String.format(Locale.getDefault(), "%.1f / %.1f", usedGiB, totalGiB)
 }
 
 private fun memoryValueReferenceText(totalBytes: Long?): String {
@@ -748,5 +749,5 @@ private fun memoryValueReferenceText(totalBytes: Long?): String {
     } else {
         99.9
     }
-    return String.format(Locale.getDefault(), "%.1f / %.1f GB", totalGiB, totalGiB)
+    return String.format(Locale.getDefault(), "%.1f / %.1f", totalGiB, totalGiB)
 }

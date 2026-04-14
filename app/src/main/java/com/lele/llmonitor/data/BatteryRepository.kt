@@ -37,6 +37,8 @@ object BatteryRepository {
     private var initialLoadJob: Job? = null
     private const val INITIAL_LOAD_CHUNK_SIZE = 120
 
+    fun isInitialHistoryLoaded(): Boolean = hasInitialHistoryLoaded
+
     fun init(context: Context) {
         appContext = context.applicationContext
     }

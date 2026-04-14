@@ -31,31 +31,68 @@ fun InfoCard(
     HomeCard(
         modifier = modifier.height(FIXED_SMALL_CARD_HEIGHT_DP),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        val contentModifier = Modifier
+            .fillMaxSize()
+            .padding(
+                horizontal = SMALL_CARD_HORIZONTAL_PADDING,
+                vertical = SMALL_CARD_VERTICAL_PADDING
             )
-            if (singleLineAutoShrink) {
-                AutoShrinkSingleLineText(
-                    text = value,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    referenceText = singleLineAutoShrinkReferenceText
-                )
-            } else {
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.headlineMedium, // headlineMedium is bold in our Type.kt
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
 
-            if (sourceLines.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
+        if (sourceLines.isEmpty()) {
+            val standardValueFontSize = MaterialTheme.typography.headlineMedium.fontSize
+            Column(
+                modifier = contentModifier,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(SMALL_CARD_TITLE_VALUE_GAP))
+                if (singleLineAutoShrink) {
+                    AutoShrinkSingleLineText(
+                        text = value,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        referenceText = singleLineAutoShrinkReferenceText,
+                        maxFontSize = standardValueFontSize
+                    )
+                } else {
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.headlineMedium, // headlineMedium is bold in our Type.kt
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        } else {
+            // Keep debug/source section behavior unchanged.
+            Column(modifier = contentModifier) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (singleLineAutoShrink) {
+                    AutoShrinkSingleLineText(
+                        text = value,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        referenceText = singleLineAutoShrinkReferenceText,
+                        maxFontSize = MaterialTheme.typography.headlineMedium.fontSize
+                    )
+                } else {
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.headlineMedium, // headlineMedium is bold in our Type.kt
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(Modifier.height(SMALL_CARD_SOURCE_SECTION_TOP_GAP))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(SMALL_CARD_SOURCE_SECTION_BOTTOM_GAP))
                 sourceLines.forEach { line ->
                     Text(
                         text = line,
@@ -69,19 +106,28 @@ fun InfoCard(
 }
 
 private val FIXED_SMALL_CARD_HEIGHT_DP = 77.7.dp
+private val SMALL_CARD_HORIZONTAL_PADDING = 16.dp
+private val SMALL_CARD_VERTICAL_PADDING = 10.dp
+private val SMALL_CARD_TITLE_VALUE_GAP = 2.dp
+private val SMALL_CARD_SOURCE_SECTION_TOP_GAP = 8.dp
+private val SMALL_CARD_SOURCE_SECTION_BOTTOM_GAP = 6.dp
 
 @Composable
 private fun AutoShrinkSingleLineText(
+    modifier: Modifier = Modifier,
     text: String,
     style: TextStyle,
     color: Color,
     referenceText: String? = null,
+    maxFontSize: TextUnit = TextUnit.Unspecified,
     minFontSize: TextUnit = 12.sp,
     shrinkFactor: Float = 0.9f
 ) {
-    val initialSize = if (style.fontSize != TextUnit.Unspecified) style.fontSize else 24.sp
+    val styleDefaultSize = if (style.fontSize != TextUnit.Unspecified) style.fontSize else 24.sp
+    val resolvedMaxFontSize = if (maxFontSize != TextUnit.Unspecified) maxFontSize else styleDefaultSize
+    val initialSize = if (styleDefaultSize > resolvedMaxFontSize) resolvedMaxFontSize else styleDefaultSize
     val sizingText = referenceText ?: text
-    var currentSize by remember(sizingText, initialSize) { mutableStateOf(initialSize) }
+    var currentSize by remember(sizingText, initialSize, resolvedMaxFontSize) { mutableStateOf(initialSize) }
     val reservedLineHeight = if (style.lineHeight != TextUnit.Unspecified) {
         style.lineHeight
     } else {
@@ -91,10 +137,10 @@ private fun AutoShrinkSingleLineText(
 
     if (referenceText != null) {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .height(reservedHeight),
-            contentAlignment = Alignment.CenterStart
+            contentAlignment = Alignment.BottomStart
         ) {
             // 使用“参考最长文本”做测量，得到固定字号，再用同字号渲染实际文本。
             Text(
@@ -123,10 +169,10 @@ private fun AutoShrinkSingleLineText(
         }
     } else {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .height(reservedHeight),
-            contentAlignment = Alignment.CenterStart
+            contentAlignment = Alignment.BottomStart
         ) {
             Text(
                 text = text,

@@ -1,6 +1,8 @@
 package com.lele.llmonitor.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.animation.core.animateFloat
@@ -9,6 +11,7 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,15 +23,18 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import com.lele.llmonitor.data.SettingsManager
 import com.lele.llmonitor.ui.components.HomeCard
 import com.lele.llmonitor.ui.components.InfoCard
+import com.lele.llmonitor.ui.components.NavigationBarBottomInsetSpacer
 import com.lele.llmonitor.ui.components.PowerCurveCard
 import com.lele.llmonitor.ui.components.TemperatureCurveCard
 import com.lele.llmonitor.ui.components.HdrGlowWrapper
 import com.lele.llmonitor.ui.components.rememberActiveRingRotationState
 import com.lele.llmonitor.ui.components.squishyClickable
+import com.lele.llmonitor.ui.components.dialog.M3EAlertDialog
 import com.lele.llmonitor.ui.theme.AppCorners
 import com.lele.llmonitor.ui.theme.AppShapes
 import com.lele.llmonitor.ui.theme.isAppInDarkTheme
@@ -61,6 +67,7 @@ fun DashboardScreen(
     val liveInstant = viewModel.instantStatus
     val shouldRunEntrance = viewModel.shouldRunEntrance
     val startupPhase = viewModel.homeStartupPhase
+    val curveAnimationEnabled = viewModel.isCurveAnimationReady
 
     // 1. 从 SettingsManager 读取设置
     val invertCurrent by SettingsManager.isInvertCurrent
@@ -112,11 +119,16 @@ fun DashboardScreen(
         )
     }
     var animatedCardKeys by remember { mutableStateOf(setOf<String>()) }
+    var showCapacityInfoDialog by remember { mutableStateOf(false) }
     LaunchedEffect(isIgnoringBatteryOptimizations, hasNotificationPermission) {
         viewModel.updateDashboardPermissionCache(
             isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
             hasNotificationPermission = hasNotificationPermission
         )
+    }
+
+    if (showCapacityInfoDialog) {
+        CapacityNoticeDialog(onDismiss = { showCapacityInfoDialog = false })
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -516,6 +528,7 @@ fun DashboardScreen(
                             com.lele.llmonitor.i18n.l10n("电池状态"),
                             instant.healthStatus,
                             Modifier.weight(1f).squishyClickable { /* Optional tap logic */ },
+                            singleLineAutoShrink = true,
                             sourceLines = if (isDebugMode) instant.healthSourceLines else emptyList()
                         )
                     }
@@ -537,11 +550,28 @@ fun DashboardScreen(
                             .squishyClickable { /* Optional: show details */ }
                     ) {
                         Column(Modifier.padding(16.dp)) {
-                            Text(
-                                text = com.lele.llmonitor.i18n.l10n("当前剩余电量 / 总容量"),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = com.lele.llmonitor.i18n.l10n("系统剩余容量 / 总容量"),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                IconButton(
+                                    onClick = { showCapacityInfoDialog = true },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = com.lele.llmonitor.i18n.l10n("容量计算说明"),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
 
                             val percentage = if (instant.totalCapacity > 0) {
@@ -605,6 +635,7 @@ fun DashboardScreen(
                         recordIntervalMs = viewModel.recordIntervalMs,
                         invert = invertCurrent,
                         isDualCell = isDoubleCell,
+                        animationEnabled = curveAnimationEnabled,
                         modifier = Modifier.squishyClickable { /* Zoom or details */ }
                     )
                 }
@@ -621,6 +652,7 @@ fun DashboardScreen(
                 ) {
                     TemperatureCurveCard(
                         history = history,
+                        animationEnabled = curveAnimationEnabled,
                         modifier = Modifier.squishyClickable { /* Zoom or details */ }
                     )
                 }
@@ -628,6 +660,83 @@ fun DashboardScreen(
                 item(key = "spacer_bottom") { Spacer(Modifier.height(24.dp)) }
         }
     }
+}
+
+@Composable
+private fun CapacityNoticeDialog(
+    onDismiss: () -> Unit
+) {
+    NoticeInfoDialog(
+        title = com.lele.llmonitor.i18n.l10n("容量计算说明"),
+        intro = com.lele.llmonitor.i18n.l10n("以下内容用于解释本卡片容量数据来源："),
+        items = listOf(
+            com.lele.llmonitor.i18n.l10n("此处容量与百分比基于系统提供的电池容量数据计算，并非系统状态栏百分比。"),
+            com.lele.llmonitor.i18n.l10n("部分厂商存在锁容策略，可能出现系统显示已充满，但实际电池容量尚未达到满值的情况。")
+        ),
+        confirmText = com.lele.llmonitor.i18n.l10n("知道了"),
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+private fun NoticeInfoDialog(
+    title: String,
+    intro: String,
+    items: List<String>,
+    confirmText: String,
+    onDismiss: () -> Unit
+) {
+    M3EAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = intro,
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = 20.sp
+                )
+                items.forEachIndexed { index, item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "${index + 1}.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = item,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                NavigationBarBottomInsetSpacer()
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(confirmText)
+            }
+        }
+    )
 }
 
 @Composable

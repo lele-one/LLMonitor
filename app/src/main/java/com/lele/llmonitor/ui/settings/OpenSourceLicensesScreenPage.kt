@@ -12,18 +12,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Verified
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,9 +25,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
-import com.lele.llmonitor.ui.theme.pageSurfaceColor
-import com.lele.llmonitor.ui.theme.pageSurfaceTopAppBarColors
 
 internal const val OPEN_SOURCE_LICENSE_DETAIL_ARG = "groupId"
 internal const val OPEN_SOURCE_LICENSE_DETAIL_ROUTE = "open_source_license_detail/{$OPEN_SOURCE_LICENSE_DETAIL_ARG}"
@@ -211,71 +202,52 @@ private fun OpenSourceLongTextCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OpenSourceLicensesScreen(navController: NavHostController) {
+fun OpenSourceLicensesScreen(
+    onOpenLicenseDetail: (String) -> Unit
+) {
     val context = LocalContext.current.applicationContext
     LaunchedEffect(context) {
         OpenSourceLicensesRepository.initialize(context)
     }
     val uiState by OpenSourceLicensesRepository.state.collectAsState()
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-        containerColor = pageSurfaceColor(),
-        topBar = {
-            TopAppBar(
-                colors = pageSurfaceTopAppBarColors(),
-                title = { Text(com.lele.llmonitor.i18n.l10n("开源许可")) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = com.lele.llmonitor.i18n.l10n("返回"))
-                    }
+    LazyColumn(
+        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        when (val state = uiState) {
+            OpenSourceLicensesUiState.Loading -> {
+                item { OpenSourceLoadingCard() }
+            }
+
+            is OpenSourceLicensesUiState.Error -> {
+                item { OpenSourceErrorCard(message = state.message) }
+            }
+
+            is OpenSourceLicensesUiState.Ready -> {
+                item { OpenSourceSummaryHeroCard(summary = state.bundle.notices.summary) }
+                items(
+                    items = state.bundle.notices.groups,
+                    key = { it.id }
+                ) { group ->
+                    OpenSourceGroupCard(
+                        group = group,
+                        onClick = { onOpenLicenseDetail(group.id) }
+                    )
                 }
-            )
+            }
         }
-    ) { paddingValues ->
-        LazyColumn(
-            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                
-        ) {
-            when (val state = uiState) {
-                OpenSourceLicensesUiState.Loading -> {
-                    item { OpenSourceLoadingCard() }
-                }
-
-                is OpenSourceLicensesUiState.Error -> {
-                    item { OpenSourceErrorCard(message = state.message) }
-                }
-
-                is OpenSourceLicensesUiState.Ready -> {
-                    item { OpenSourceSummaryHeroCard(summary = state.bundle.notices.summary) }
-                    items(
-                        items = state.bundle.notices.groups,
-                        key = { it.id }
-                    ) { group ->
-                        OpenSourceGroupCard(
-                            group = group,
-                            onClick = { navController.navigate(openSourceLicenseDetailRoute(group.id)) }
-                        )
-                    }
-                }
-            }
-            item {
-                com.lele.llmonitor.ui.components.NavigationBarBottomInsetSpacer()
-            }
+        item {
+            com.lele.llmonitor.ui.components.NavigationBarBottomInsetSpacer()
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpenSourceLicenseDetailScreen(
-    navController: NavHostController,
     groupId: String
 ) {
     val context = LocalContext.current.applicationContext
@@ -285,87 +257,69 @@ fun OpenSourceLicenseDetailScreen(
     val uiState by OpenSourceLicensesRepository.state.collectAsState()
     val decodedGroupId = Uri.decode(groupId)
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-        containerColor = pageSurfaceColor(),
-        topBar = {
-            TopAppBar(
-                colors = pageSurfaceTopAppBarColors(),
-                title = { Text(com.lele.llmonitor.i18n.l10n("许可详情")) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = com.lele.llmonitor.i18n.l10n("返回"))
+    LazyColumn(
+        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        when (val state = uiState) {
+            OpenSourceLicensesUiState.Loading -> {
+                item { OpenSourceLoadingCard() }
+            }
+
+            is OpenSourceLicensesUiState.Error -> {
+                item { OpenSourceErrorCard(message = state.message) }
+            }
+
+            is OpenSourceLicensesUiState.Ready -> {
+                val group = state.bundle.notices.groups.firstOrNull { it.id == decodedGroupId }
+                if (group == null) {
+                    item {
+                        OpenSourceErrorCard(message = com.lele.llmonitor.i18n.l10n("未找到对应的许可信息。"))
                     }
-                }
-            )
-        }
-    ) { paddingValues ->
-        LazyColumn(
-            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                
-        ) {
-            when (val state = uiState) {
-                OpenSourceLicensesUiState.Loading -> {
-                    item { OpenSourceLoadingCard() }
-                }
-
-                is OpenSourceLicensesUiState.Error -> {
-                    item { OpenSourceErrorCard(message = state.message) }
-                }
-
-                is OpenSourceLicensesUiState.Ready -> {
-                    val group = state.bundle.notices.groups.firstOrNull { it.id == decodedGroupId }
-                    if (group == null) {
+                } else {
+                    item {
+                        SettingsHeroCard(
+                            title = group.displayName,
+                            subtitle = "",
+                            chips = buildOpenSourceDetailChips(group),
+                            icon = Icons.Rounded.Description
+                        )
+                    }
+                    item { OpenSourceArtifactsCard(group = group) }
+                    item { OpenSourceMetadataCard(group = group) }
+                    if (group.licenseText.isNotBlank()) {
                         item {
-                            OpenSourceErrorCard(message = com.lele.llmonitor.i18n.l10n("未找到对应的许可信息。"))
-                        }
-                    } else {
-                        item {
-                            SettingsHeroCard(
-                                title = group.displayName,
-                                subtitle = "",
-                                chips = buildOpenSourceDetailChips(group),
-                                icon = Icons.Rounded.Description
+                            OpenSourceLongTextCard(
+                                title = com.lele.llmonitor.i18n.l10n("许可证全文"),
+                                text = group.licenseText
                             )
                         }
-                        item { OpenSourceArtifactsCard(group = group) }
-                        item { OpenSourceMetadataCard(group = group) }
-                        if (group.licenseText.isNotBlank()) {
-                            item {
-                                OpenSourceLongTextCard(
-                                    title = com.lele.llmonitor.i18n.l10n("许可证全文"),
-                                    text = group.licenseText
-                                )
-                            }
+                    }
+                    if (group.noticeText.isNotBlank()) {
+                        item {
+                            OpenSourceLongTextCard(
+                                title = com.lele.llmonitor.i18n.l10n("NOTICE 声明"),
+                                text = group.noticeText
+                            )
                         }
-                        if (group.noticeText.isNotBlank()) {
-                            item {
-                                OpenSourceLongTextCard(
-                                    title = com.lele.llmonitor.i18n.l10n("NOTICE 声明"),
-                                    text = group.noticeText
-                                )
-                            }
-                        }
-                        if (group.licenseText.isBlank() && group.noticeText.isBlank()) {
-                            item {
-                                OpenSourceLongTextCard(
-                                    title = com.lele.llmonitor.i18n.l10n("许可材料"),
-                                    text = group.detailText.ifBlank {
-                                        state.bundle.thirdPartyNoticesText.ifBlank { com.lele.llmonitor.i18n.l10n("暂无可展示的许可文本。") }
-                                    }
-                                )
-                            }
+                    }
+                    if (group.licenseText.isBlank() && group.noticeText.isBlank()) {
+                        item {
+                            OpenSourceLongTextCard(
+                                title = com.lele.llmonitor.i18n.l10n("许可材料"),
+                                text = group.detailText.ifBlank {
+                                    state.bundle.thirdPartyNoticesText.ifBlank { com.lele.llmonitor.i18n.l10n("暂无可展示的许可文本。") }
+                                }
+                            )
                         }
                     }
                 }
             }
-            item {
-                com.lele.llmonitor.ui.components.NavigationBarBottomInsetSpacer()
-            }
+        }
+        item {
+            com.lele.llmonitor.ui.components.NavigationBarBottomInsetSpacer()
         }
     }
 }

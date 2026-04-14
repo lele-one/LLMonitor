@@ -29,3 +29,9 @@
 # Keep LLMonitor classes to match LLClass release behavior and avoid
 # obfuscation-breaking JSON model mapping in settings/open-source pages.
 -keep class com.lele.llmonitor.** { *; }
+
+# Glance widget updates are dispatched via WorkManager. In minified builds,
+# WorkManager reflectively instantiates InputMergers; keep their no-arg ctor.
+-keep class * extends androidx.work.InputMerger {
+    public <init>();
+}

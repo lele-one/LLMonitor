@@ -119,17 +119,26 @@ object BatteryEngine {
         }
 
         val finalValue = normalizeCurrentToMa(rawCurrent = current)
+        val normalizationMode = if (kotlin.math.abs(current) > 20_000L) {
+            "auto(uA->mA)"
+        } else {
+            "auto(mA)"
+        }
         probes += BatterySourceProbe(
             "unit-normalize",
-            "$currentSource/mA => ${String.format("%.1f", finalValue)}mA",
+            "$currentSource/$normalizationMode => ${String.format("%.1f", finalValue)}mA",
             true
         )
         return BatteryProbeResult(finalValue, probes)
     }
 
     private fun normalizeCurrentToMa(rawCurrent: Long): Float {
-        // 固定策略：所有来源都按 mA 解释，不进行单位换算。
-        return rawCurrent.toFloat()
+        // 灵活判定：大于阈值的读数按 uA 解释并转换为 mA，其余按 mA 处理。
+        return if (kotlin.math.abs(rawCurrent) > 20_000L) {
+            rawCurrent / 1000f
+        } else {
+            rawCurrent.toFloat()
+        }
     }
 
     fun getVoltageVWithSources(context: Context): BatteryProbeResult<Float> {

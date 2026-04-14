@@ -1,11 +1,17 @@
 package com.lele.llmonitor.ui.navigation
 
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.lele.llmonitor.ui.MainSwipeScreen
 import com.lele.llmonitor.ui.dashboard.BatteryViewModel
+import com.lele.llmonitor.ui.settings.HOME_WALLPAPER_CROP_ROUTE
+import com.lele.llmonitor.ui.settings.HOME_WALLPAPER_CROP_SOURCE_URI_ARG
+import com.lele.llmonitor.ui.settings.HomeWallpaperCropScreen
 import com.lele.llmonitor.ui.settings.SettingsScreen
 import com.lele.llmonitor.ui.settings.SettingsRoutes
+import com.lele.llmonitor.ui.settings.createHomeWallpaperCropRoute
 import java.io.File
 
 internal object RootRoutes {
@@ -40,6 +46,11 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
     wallpaperFile: File?,
     onSetHdrMode: (Boolean) -> Unit
 ) {
+    val navigateToWallpaperCrop: (android.net.Uri) -> Unit = { sourceUri ->
+        navController.navigate(createHomeWallpaperCropRoute(sourceUri)) {
+            launchSingleTop = true
+        }
+    }
     val navigateToSettingsRoot: (String) -> Unit = { settingsRoute ->
         navController.navigate(mapSettingsInternalRouteToRootRoute(settingsRoute)) {
             launchSingleTop = true
@@ -72,6 +83,7 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             onExit = { navController.popBackStack() },
             openAboutDirectly = false,
             initialSettingsRoute = SettingsRoutes.HOME,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
         )
     }
@@ -80,6 +92,7 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             viewModel = viewModel,
             onExit = { navController.popBackStack() },
             initialSettingsRoute = SettingsRoutes.APPEARANCE,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
         )
     }
@@ -88,6 +101,7 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             viewModel = viewModel,
             onExit = { navController.popBackStack() },
             initialSettingsRoute = SettingsRoutes.SCENE,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
         )
     }
@@ -96,6 +110,7 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             viewModel = viewModel,
             onExit = { navController.popBackStack() },
             initialSettingsRoute = SettingsRoutes.HARDWARE,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
         )
     }
@@ -104,6 +119,7 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             viewModel = viewModel,
             onExit = { navController.popBackStack() },
             initialSettingsRoute = SettingsRoutes.SYSTEM,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
         )
     }
@@ -112,6 +128,7 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             viewModel = viewModel,
             onExit = { navController.popBackStack() },
             initialSettingsRoute = SettingsRoutes.DATA,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
         )
     }
@@ -121,7 +138,22 @@ internal fun androidx.navigation.NavGraphBuilder.registerMainRoutes(
             onExit = { navController.popBackStack() },
             openAboutDirectly = true,
             initialSettingsRoute = SettingsRoutes.ABOUT,
+            onOpenWallpaperCrop = navigateToWallpaperCrop,
             onNavigateFromHome = navigateToSettingsRoot
+        )
+    }
+    composable(
+        route = HOME_WALLPAPER_CROP_ROUTE,
+        arguments = listOf(
+            navArgument(HOME_WALLPAPER_CROP_SOURCE_URI_ARG) {
+                type = NavType.StringType
+            }
+        )
+    ) { entry ->
+        val encodedSourceUri = entry.arguments?.getString(HOME_WALLPAPER_CROP_SOURCE_URI_ARG).orEmpty()
+        HomeWallpaperCropScreen(
+            navController = navController,
+            encodedSourceUri = encodedSourceUri
         )
     }
 }

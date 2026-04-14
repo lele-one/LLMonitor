@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.sp
 import com.lele.llmonitor.data.local.BatteryEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
@@ -34,7 +33,6 @@ data class TempPointData(val timestamp: Long, val temperature: Float)
 private const val TEMP_MIN_DISPLAY_C = -20f
 private const val TEMP_MAX_DISPLAY_C = 120f
 private const val MAX_TEMPERATURE_GRID_LINES = 40
-private const val CURVE_AUTO_REBOUND_DELAY_MS = 8000L
 
 private data class TempCurveRenderSnapshot(
     val points: List<TempPointData>,
@@ -46,6 +44,7 @@ private data class TempCurveRenderSnapshot(
 @Composable
 fun TemperatureCurveCard(
     history: List<BatteryEntity>,
+    animationEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
@@ -153,12 +152,9 @@ fun TemperatureCurveCard(
         }
     }
 
-    // 延迟开启“3秒自动回弹”，避免冷启动分片补历史期间触发抖动。
-    LaunchedEffect(hasInitialAligned) {
-        if (!hasInitialAligned) return@LaunchedEffect
-        autoReboundEnabled = false
-        delay(CURVE_AUTO_REBOUND_DELAY_MS)
-        autoReboundEnabled = true
+    // 冷启动历史未就绪前禁用动画，待历史加载完成后再恢复自动回弹动画。
+    LaunchedEffect(hasInitialAligned, animationEnabled) {
+        autoReboundEnabled = hasInitialAligned && animationEnabled
     }
 
     LaunchedEffect(latestHistoryTimestamp, scrollState.maxValue) {

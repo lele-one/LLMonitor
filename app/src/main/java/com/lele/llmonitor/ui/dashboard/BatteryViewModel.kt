@@ -92,6 +92,9 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
     var pendingOptionalCardsUpdate by mutableStateOf<DashboardOptionalCardsState?>(null)
         private set
 
+    var isCurveAnimationReady by mutableStateOf(BatteryRepository.isInitialHistoryLoaded())
+        private set
+
     var cachedIsIgnoringBatteryOptimizations by mutableStateOf(true)
         private set
 
@@ -210,6 +213,9 @@ class BatteryViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(Dispatchers.IO) {
             BatteryRepository.awaitInitialHistoryLoaded(appContext)
+            withContext(Dispatchers.Main) {
+                isCurveAnimationReady = true
+            }
         }
 
         viewModelScope.launch(Dispatchers.Default) {

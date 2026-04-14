@@ -32,7 +32,7 @@ private fun resolveAboutBuildChipLabel(): String {
 private fun AboutHeroCard() {
     SettingsHeroCard(
         title = "LLMonitor",
-        subtitle = com.lele.llmonitor.i18n.l10n("唯有长江水，无语东流。"),
+        subtitle = com.lele.llmonitor.i18n.l10n("风在耳边"),
         chips = listOf(
             "Version ${BuildConfig.VERSION_NAME}",
             resolveAboutBuildChipLabel()

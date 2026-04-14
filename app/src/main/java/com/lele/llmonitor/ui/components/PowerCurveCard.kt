@@ -23,7 +23,6 @@ import com.lele.llmonitor.data.BatteryEngine
 import com.lele.llmonitor.data.local.BatteryEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
@@ -35,7 +34,6 @@ import java.util.*
 private const val POWER_MIN_DISPLAY_W = -400f
 private const val POWER_MAX_DISPLAY_W = 400f
 private const val MAX_POWER_GRID_LINES = 40
-private const val CURVE_AUTO_REBOUND_DELAY_MS = 8000L
 
 private data class PowerCurveRenderSnapshot(
     val points: List<PointData>,
@@ -50,6 +48,7 @@ fun PowerCurveCard(
     recordIntervalMs: Long,
     invert: Boolean = false,
     isDualCell: Boolean = false,
+    animationEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
@@ -173,12 +172,9 @@ fun PowerCurveCard(
         }
     }
 
-    // 延迟开启“3秒自动回弹”，避免冷启动分片补历史期间触发抖动。
-    LaunchedEffect(hasInitialAligned) {
-        if (!hasInitialAligned) return@LaunchedEffect
-        autoReboundEnabled = false
-        delay(CURVE_AUTO_REBOUND_DELAY_MS)
-        autoReboundEnabled = true
+    // 冷启动历史未就绪前禁用动画，待历史加载完成后再恢复自动回弹动画。
+    LaunchedEffect(hasInitialAligned, animationEnabled) {
+        autoReboundEnabled = hasInitialAligned && animationEnabled
     }
 
     // 自动滚动：仅在“当前已贴边”时跟随最新，不做额外回弹动画。

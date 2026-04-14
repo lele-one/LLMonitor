@@ -595,8 +595,10 @@ fun HomeWallpaperCropScreen(
                 SettingsContentCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(controlCardShape)
-                        .background(controlCardBackdropColor),
+                        .background(
+                            color = controlCardBackdropColor,
+                            shape = controlCardShape
+                        ),
                     contentPadding = PaddingValues(18.dp),
                     containerColorOverride = Color.Transparent,
                     borderColorOverride = controlCardBorderColor
@@ -991,7 +993,7 @@ private fun AngleRuler(
             size = Size(indicatorWidth, indicatorHeight),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(
                 x = indicatorWidth / 2f,
-                y = indicatorWidth / 2f
+                y = indicatorHeight / 2f
             )
         )
         drawCircle(

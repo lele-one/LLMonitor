@@ -70,6 +70,7 @@ private data class WidgetThemeColors(
 private const val SETTINGS_PREF_NAME = "llmonitor_settings"
 private const val THEME_MODE_KEY = "theme_mode"
 private const val THEME_PALETTE_PRESET_KEY = "theme_palette_preset"
+private val WIDGET_CAPACITY_TEXT_OFFSET = 3.5.dp
 
 private data class WidgetThemeSelection(
     val themeMode: Int,
@@ -120,7 +121,7 @@ class BatteryWidget : GlanceAppWidget() {
 
     companion object {
         private val SMALL_SQUARE = DpSize(100.dp, 100.dp) // 2x2
-        private val WIDE_STRIP = DpSize(250.dp, 70.dp)    // 4x1
+        private val WIDE_STRIP = DpSize(250.dp, 70.dp)    // 1x4(横条)
         private val LARGE_RECT = DpSize(250.dp, 160.dp)   // 4x2
     }
 
@@ -167,7 +168,7 @@ class BatteryWidget : GlanceAppWidget() {
                 // 4x1 横条时使用极小边距，防止垂直空间不足
                 .padding(if (size.height < 100.dp) 10.dp else 16.dp)
         ) {
-            if (size.width < 180.dp) {
+            if (size.width < 180.dp && size.height >= 100.dp) {
                 // [2x2] 小方块 (垂直布局)
                 LayoutSmallVertical(
                     power = power,
@@ -179,7 +180,7 @@ class BatteryWidget : GlanceAppWidget() {
                     themeColors = widgetThemeColors
                 )
             } else {
-                // [4x1] 横条 (压缩版垂直布局) - 结构与大卡片一致，但更紧凑
+                // [1x4] 横条 (压缩版垂直布局) - 结构与大卡片一致，但更紧凑
                 LayoutWideVerticalCompressed(
                     power = power,
                     tempText = tempText,
@@ -269,13 +270,14 @@ class BatteryWidget : GlanceAppWidget() {
                 // 注意：2x2 宽度有限，字号设为 10.sp 且不显示单位，防止换行
                 Text(
                     text = "$capacity / $totalCapacity",
-                    style = TextStyle(fontSize = 14.sp, color = themeColors.outline)
+                    style = TextStyle(fontSize = 12.5.sp, color = themeColors.outline),
+                    modifier = GlanceModifier.padding(top = WIDGET_CAPACITY_TEXT_OFFSET)
                 )
             }
         }
     }
     // ==========================================
-    // 2. 横条 (4x1) - 压缩版垂直排列 (与大卡片设计一致)
+    // 2. 横条 (1x4) - 压缩版垂直排列 (与大卡片设计一致)
     // ==========================================
     @Composable
     private fun LayoutWideVerticalCompressed(
@@ -348,7 +350,8 @@ class BatteryWidget : GlanceAppWidget() {
 
                 Text(
                     text = "$capacity / $totalCapacity",
-                    style = TextStyle(fontSize = 11.sp, color = themeColors.onSurfaceVariant)
+                    style = TextStyle(fontSize = 11.5.sp, color = themeColors.onSurfaceVariant),
+                    modifier = GlanceModifier.padding(top = WIDGET_CAPACITY_TEXT_OFFSET)
                 )
             }
         }
@@ -356,6 +359,10 @@ class BatteryWidget : GlanceAppWidget() {
 
 }
 
-class BatteryWidgetReceiver : GlanceAppWidgetReceiver() {
+class BatteryWidget1x4Receiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = BatteryWidget()
+}
+
+class BatteryWidget2x2Receiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = BatteryWidget()
 }

@@ -161,6 +161,7 @@ fun SettingsScreen(
     onExit: (() -> Unit)? = null,
     openAboutDirectly: Boolean = false,
     initialSettingsRoute: String? = null,
+    onOpenWallpaperCrop: (Uri) -> Unit,
     onNavigateFromHome: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -428,7 +429,7 @@ fun SettingsScreen(
                                 }
                             },
                             onOpenWallpaperCrop = { sourceUri ->
-                                navController.navigate(createHomeWallpaperCropRoute(sourceUri))
+                                onOpenWallpaperCrop(sourceUri)
                             }
                         )
                     }
@@ -487,7 +488,11 @@ fun SettingsScreen(
                 )
             }
             composable(SettingsRoutes.OPEN_SOURCE) {
-                OpenSourceLicensesScreen(navController = navController)
+                OpenSourceLicensesScreen(
+                    onOpenLicenseDetail = { groupId ->
+                        navController.navigate(openSourceLicenseDetailRoute(groupId))
+                    }
+                )
             }
             composable(
                 route = OPEN_SOURCE_LICENSE_DETAIL_ROUTE,
@@ -499,23 +504,7 @@ fun SettingsScreen(
             ) { entry ->
                 val groupId = entry.arguments?.getString(OPEN_SOURCE_LICENSE_DETAIL_ARG).orEmpty()
                 OpenSourceLicenseDetailScreen(
-                    navController = navController,
                     groupId = groupId
-                )
-            }
-            composable(
-                route = HOME_WALLPAPER_CROP_ROUTE,
-                arguments = listOf(
-                    navArgument(HOME_WALLPAPER_CROP_SOURCE_URI_ARG) {
-                        type = NavType.StringType
-                    }
-                )
-            ) { entry ->
-                val encodedSourceUri =
-                    entry.arguments?.getString(HOME_WALLPAPER_CROP_SOURCE_URI_ARG).orEmpty()
-                HomeWallpaperCropScreen(
-                    navController = navController,
-                    encodedSourceUri = encodedSourceUri
                 )
             }
         }
@@ -671,35 +660,38 @@ private fun SceneSettingsPage(
 
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
-            FrequencySelectorItem(
-                title = com.lele.llmonitor.i18n.l10n("应用界面刷新率"),
-                currentValueMs = SettingsManager.refreshRateUiCharging.value,
-                options = listOf(500L, 1000L, 2000L, 3000L, 5000L),
-                onValueChange = {
-                    SettingsManager.setRefreshRateUiCharging(it)
-                    onForceRefresh()
-                }
-            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FrequencySelectorItem(
+                    title = com.lele.llmonitor.i18n.l10n("应用界面更新率"),
+                    currentValueMs = SettingsManager.refreshRateUiCharging.value,
+                    options = listOf(500L, 1000L, 2000L, 3000L, 5000L),
+                    onValueChange = {
+                        SettingsManager.setRefreshRateUiCharging(it)
+                        onForceRefresh()
+                    }
+                )
 
-            FrequencySelectorItem(
-                title = com.lele.llmonitor.i18n.l10n("通知/组件更新率"),
-                currentValueMs = SettingsManager.refreshRateNotifyCharging.value,
-                options = listOf(1000L, 2000L, 3000L, 5000L, 10000L, 30000L),
-                onValueChange = {
-                    SettingsManager.setRefreshRateNotifyCharging(it)
-                    onForceRefresh()
-                }
-            )
+                FrequencySelectorItem(
+                    title = com.lele.llmonitor.i18n.l10n("通知/组件更新率"),
+                    currentValueMs = SettingsManager.refreshRateNotifyCharging.value,
+                    options = listOf(1000L, 2000L, 3000L, 5000L, 10000L, 30000L),
+                    onValueChange = {
+                        SettingsManager.setRefreshRateNotifyCharging(it)
+                        onForceRefresh()
+                    }
+                )
 
-            FrequencySelectorItem(
-                title = com.lele.llmonitor.i18n.l10n("熄屏下通知/组件更新率"),
-                currentValueMs = SettingsManager.refreshRateNotifyChargingScreenOff.value,
-                options = listOf(3000L, 5000L, 10000L, 30000L, 60000L, 180000L, 300000L),
-                onValueChange = {
-                    SettingsManager.setRefreshRateNotifyChargingScreenOff(it)
-                    onForceRefresh()
-                }
-            )
+                FrequencySelectorItem(
+                    title = com.lele.llmonitor.i18n.l10n("熄屏下通知/组件更新率"),
+                    currentValueMs = SettingsManager.refreshRateNotifyChargingScreenOff.value,
+                    options = listOf(3000L, 5000L, 10000L, 30000L, 60000L, 180000L, 300000L),
+                    onValueChange = {
+                        SettingsManager.setRefreshRateNotifyChargingScreenOff(it)
+                        onForceRefresh()
+                    }
+                )
+            }
         } else {
             ListItem(
                 headlineContent = { Text(com.lele.llmonitor.i18n.l10n("通知")) },
@@ -718,35 +710,38 @@ private fun SceneSettingsPage(
 
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
-            FrequencySelectorItem(
-                title = com.lele.llmonitor.i18n.l10n("应用界面刷新率"),
-                currentValueMs = SettingsManager.refreshRateUiNotCharging.value,
-                options = listOf(1000L, 3000L, 5000L, 10000L, 15000L, 30000L, 60000L),
-                onValueChange = {
-                    SettingsManager.setRefreshRateUiNotCharging(it)
-                    onForceRefresh()
-                }
-            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FrequencySelectorItem(
+                    title = com.lele.llmonitor.i18n.l10n("应用界面更新率"),
+                    currentValueMs = SettingsManager.refreshRateUiNotCharging.value,
+                    options = listOf(1000L, 3000L, 5000L, 10000L, 15000L, 30000L, 60000L),
+                    onValueChange = {
+                        SettingsManager.setRefreshRateUiNotCharging(it)
+                        onForceRefresh()
+                    }
+                )
 
-            FrequencySelectorItem(
-                title = com.lele.llmonitor.i18n.l10n("通知/组件更新率"),
-                currentValueMs = SettingsManager.refreshRateNotifyNotCharging.value,
-                options = listOf(3000L, 5000L, 10000L, 30000L, 60000L, 180000L, 300000L, 600000L),
-                onValueChange = {
-                    SettingsManager.setRefreshRateNotifyNotCharging(it)
-                    onForceRefresh()
-                }
-            )
+                FrequencySelectorItem(
+                    title = com.lele.llmonitor.i18n.l10n("通知/组件更新率"),
+                    currentValueMs = SettingsManager.refreshRateNotifyNotCharging.value,
+                    options = listOf(3000L, 5000L, 10000L, 30000L, 60000L, 180000L, 300000L, 600000L),
+                    onValueChange = {
+                        SettingsManager.setRefreshRateNotifyNotCharging(it)
+                        onForceRefresh()
+                    }
+                )
 
-            FrequencySelectorItem(
-                title = com.lele.llmonitor.i18n.l10n("熄屏下通知/组件更新率"),
-                currentValueMs = SettingsManager.refreshRateNotifyNotChargingScreenOff.value,
-                options = listOf(10000L, 30000L, 60000L, 180000L, 300000L, 600000L, 900000L),
-                onValueChange = {
-                    SettingsManager.setRefreshRateNotifyNotChargingScreenOff(it)
-                    onForceRefresh()
-                }
-            )
+                FrequencySelectorItem(
+                    title = com.lele.llmonitor.i18n.l10n("熄屏下通知/组件更新率"),
+                    currentValueMs = SettingsManager.refreshRateNotifyNotChargingScreenOff.value,
+                    options = listOf(10000L, 30000L, 60000L, 180000L, 300000L, 600000L, 900000L),
+                    onValueChange = {
+                        SettingsManager.setRefreshRateNotifyNotChargingScreenOff(it)
+                        onForceRefresh()
+                    }
+                )
+            }
         }
     }
 }
